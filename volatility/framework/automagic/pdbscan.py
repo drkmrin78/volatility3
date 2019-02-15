@@ -181,7 +181,7 @@ class KernelPDBScanner(interfaces.automagic.AutomagicInterface):
 
     def recurse_symbol_fulfiller(self, context: interfaces.context.ContextInterface,
                                  valid_kernels: ValidKernelsType) -> None:
-        """Fulfills the SymbolRequirements in `self._symbol_requirements` found by the `recurse_symbol_requirements`.
+        """Fulfills the SymbolTableRequirements in `self._symbol_requirements` found by the `recurse_symbol_requirements`.
 
         This pass will construct any requirements that may need it in the context it was passed
 
@@ -414,7 +414,7 @@ class KernelPDBScanner(interfaces.automagic.AutomagicInterface):
                 context.symbol_space.append(native.NativeTable("pdbscan", native.std_ctypes))
             # TODO: check if this is a windows symbol requirement, otherwise ignore it
             self._symbol_requirements = self.find_requirements(context, config_path, requirement,
-                                                               requirements.SymbolRequirement)
+                                                               requirements.SymbolTableRequirement)
             potential_layers = self.find_virtual_layers_from_req(
                 context = context, config_path = config_path, requirement = requirement)
             for sub_config_path, symbol_req in self._symbol_requirements:
