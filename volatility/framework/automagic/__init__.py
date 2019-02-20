@@ -43,6 +43,7 @@ linux_automagic = ['ConstructionMagic', 'LayerStacker', 'LinuxBannerCache', 'Lin
 
 mac_automagic = ['ConstructionMagic', 'LayerStacker', 'MacBannerCache', 'MacSymbolFinder']
 
+freebsd_automagic = ['ConstructionMagic', 'LayerStacker', 'FreeBSDSymbolFinder']
 
 def available(context: interfaces.context.ContextInterface) -> List[interfaces.automagic.AutomagicInterface]:
     """Returns an ordered list of all subclasses of :class:`~volatility.framework.interfaces.automagic.AutomagicInterface`.
@@ -76,6 +77,9 @@ def choose_automagic(automagics, plugin):
                 output += [amagic]
         elif plugin_category == 'mac':
             if amagic.__class__.__name__ in mac_automagic:
+                output += [amagic]
+        elif plugin_category == 'freebsd':
+            if amagic.__class__.__name__ in freebsd_automagic:
                 output += [amagic]
         else:
             return automagics
