@@ -22,7 +22,7 @@ from typing import Callable, Iterable, List
 
 import volatility.framework.interfaces.plugins as interfaces_plugins
 from volatility.framework import renderers, interfaces, contexts
-# from volatility.framework.automagic import linux #FreeBSD automagic not implemented
+from volatility.framework.automagic import freebsd #FreeBSD automagic not implemented
 from volatility.framework.configuration import requirements
 from volatility.framework.objects import utility
 
@@ -84,7 +84,7 @@ class PsList(interfaces_plugins.PluginInterface):
             #    seen[proc.vol.offset] = 1
 
             # Generate and advance
-            yield proc
+            yield proc.cast("proc")
             proc = proc.p_list.le_next.dereference()
 
     def _generator(self):
@@ -95,7 +95,12 @@ class PsList(interfaces_plugins.PluginInterface):
                 self.config['freebsd'],
                 filter = self.create_filter([self.config.get('pid', None)])):
             pid = task.p_pid
-            ppid = 0
+
+            if (task.p_pptr != 0): #has parent?
+                ppid = task.p_pptr.dereference().p_pid
+            else: 
+                ppid = 0
+            
             name = utility.array_to_string(task.p_comm)
             yield (0, (pid, ppid, name))
 
