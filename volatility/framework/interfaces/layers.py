@@ -212,7 +212,7 @@ class DataLayerInterface(interfaces.configuration.ConfigurableInterface, metacla
             progress = DummyProgress()  # type: ProgressValue
             scan_iterator = functools.partial(self._scan_iterator, scanner, sections)
             scan_metric = self._scan_metric(scanner, sections)
-            if scanner.thread_safe and not constants.DISABLE_MULTITHREADED_SCANNING:
+            if scanner.thread_safe and constants.PARALLELISM:
                 progress = multiprocessing.Manager().Value("Q", 0)
                 scan_chunk = functools.partial(self._scan_chunk, scanner, progress)
                 with multiprocessing.Pool() as pool:
@@ -383,7 +383,8 @@ class TranslationLayerInterface(DataLayerInterface, metaclass = ABCMeta):
                 current_offset = offset
             elif offset < current_offset:
                 raise exceptions.LayerException("Mapping returned an overlapping element")
-            output += [self._context.memory.read(layer, mapped_offset, mapped_length, pad)]
+            if mapped_length > 0:
+                output += [self._context.memory.read(layer, mapped_offset, mapped_length, pad)]
             current_offset += mapped_length
         recovered_data = b"".join(output)
         return recovered_data + b"\x00" * (length - len(recovered_data))
@@ -425,7 +426,7 @@ class Memory(collections.abc.Mapping):
     def __init__(self) -> None:
         self._layers = {}  # type: Dict[str, DataLayerInterface]
 
-    def read(self, layer: str, offset: int, length: int, pad: bool = False):
+    def read(self, layer: str, offset: int, length: int, pad: bool = False) -> bytes:
         """Reads from a particular layer at offset for length bytes
 
            Returns 'bytes' not 'str'

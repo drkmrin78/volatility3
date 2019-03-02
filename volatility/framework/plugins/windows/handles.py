@@ -56,7 +56,7 @@ class Handles(interfaces_plugins.PluginInterface):
             requirements.TranslationLayerRequirement(
                 name = 'primary', description = 'Memory layer for the kernel', architectures = ["Intel32", "Intel64"]),
             requirements.SymbolTableRequirement(name = "nt_symbols", description = "Windows kernel symbols")
-        ]
+        ] + pslist.PsList.list_processes_filter_requirements
 
     def _decode_pointer(self, value, magic):
         """Windows encodes pointers to objects and decodes them on the fly
@@ -306,15 +306,24 @@ class Handles(interfaces_plugins.PluginInterface):
                                "Cannot access _OBJECT_HEADER at {0:#x}".format(entry.vol.offset))
                     continue
 
-                yield (0, (proc.UniqueProcessId, process_name, format_hints.Hex(entry.HandleValue), obj_type,
-                           format_hints.Hex(entry.GrantedAccess), obj_name))
+                yield (0, (proc.UniqueProcessId,
+                           process_name,
+                           format_hints.Hex(entry.Body.vol.offset),
+                           format_hints.Hex(entry.HandleValue),
+                           obj_type,
+                           format_hints.Hex(entry.GrantedAccess),
+                           obj_name))
 
     def run(self):
 
         filter_func = pslist.PsList.create_filter([self.config.get('pid', None)])
 
-        return renderers.TreeGrid([("PID", int), ("Process", str), ("HandleValue", format_hints.Hex), ("Type", str),
-                                   ("GrantedAccess", format_hints.Hex), ("Name", str)],
+        return renderers.TreeGrid([("PID", int), ("Process", str),
+                                   ("Offset", format_hints.Hex),
+                                   ("HandleValue", format_hints.Hex),
+                                   ("Type", str),
+                                   ("GrantedAccess", format_hints.Hex),
+                                   ("Name", str)],
                                   self._generator(
                                       pslist.PsList.list_processes(
                                           self.context,

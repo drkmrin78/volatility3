@@ -452,11 +452,22 @@ class _FILE_OBJECT(objects.Struct, ExecutiveObject):
 
         try:
             name += self.FileName.String
-        except exceptions.PagedInvalidAddressException:
+        except (TypeError, exceptions.PagedInvalidAddressException):
             pass
 
         return name
 
+class _KMUTANT(objects.Struct, ExecutiveObject):
+    """A class for windows mutant objects"""
+
+    def is_valid(self) -> bool:
+        """Determine if the object is valid"""
+        return True
+
+    def get_name(self) -> str:
+        """Get the object's name from the object header"""
+        header = self.object_header()
+        return header.NameInfo.Name.String  # type: ignore
 
 class _OBJECT_HEADER(objects.Struct):
     """A class for the headers for executive kernel objects, which contains
@@ -488,9 +499,9 @@ class _OBJECT_HEADER(objects.Struct):
             # windows 7 and later have a TypeIndex, but windows 10
             # further encodes the index value with nt1!ObHeaderCookie
             try:
-                type_index = ((self.vol.offset >> 8) ^ cookie ^ ord(self.TypeIndex)) & 0xFF
+                type_index = ((self.vol.offset >> 8) ^ cookie ^ self.TypeIndex) & 0xFF
             except AttributeError:
-                type_index = ord(self.TypeIndex)
+                type_index = self.TypeIndex
 
             return type_map.get(type_index)
 
@@ -502,7 +513,7 @@ class _OBJECT_HEADER(objects.Struct):
         symbol_table_name = self.vol.type_name.split(constants.BANG)[0]
 
         try:
-            header_offset = ord(self.NameInfoOffset)
+            header_offset = self.NameInfoOffset
         except AttributeError:
             # http://codemachine.com/article_objectheader.html (Windows 7 and later)
             name_info_bit = 0x2
@@ -515,12 +526,12 @@ class _OBJECT_HEADER(objects.Struct):
 
             ntkrnlmp = self._context.module(symbol_table_name, layer_name = self.vol.layer_name, offset = kvo)
             address = ntkrnlmp.get_symbol("ObpInfoMaskToOffset").address
-            calculated_index = ord(self.InfoMask) & (name_info_bit | (name_info_bit - 1))
+            calculated_index = self.InfoMask & (name_info_bit | (name_info_bit - 1))
 
             header_offset = self._context.object(
                 symbol_table_name + constants.BANG + "unsigned char",
                 layer_name = self.vol.native_layer_name,
-                offset = address + calculated_index)
+                offset = kvo + address + calculated_index)
 
         header = self._context.object(
             symbol_table_name + constants.BANG + "_OBJECT_HEADER_NAME_INFO",
