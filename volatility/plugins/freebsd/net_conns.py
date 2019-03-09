@@ -67,36 +67,53 @@ class Net_Conns(interfaces_plugins.PluginInterface):
                             layer_name,
                             0,
                             absolute_symbol_addresses=True)
-        #probably going to need other symbols too
+
         ripcbinfo = view.object(symbol_name = "ripcbinfo").cast("inpcbinfo")
-        inpcb = ripcbinfo.ipi_listhead.dereference().lh_first.dereference()
+        tcbinfo = view.object(symbol_name = "tcbinfo").cast("inpcbinfo")
+        udbinfo = view.object(symbol_name = "udbinfo").cast("inpcbinfo")
         
-        while inpcb is not None and inpcb.vol.offset != 0:
-            yield inpcb.cast("inpcb")
-            inpcb = inpcb.inp_list.le_next.dereference()
+        for inpcbinfo in [tcbinfo, udbinfo, ripcbinfo]: 
+            inpcb = inpcbinfo.ipi_listhead.dereference().lh_first.dereference()
+            
+            if inpcbinfo is tcbinfo:
+                proto = "TCP"
+            elif inpcbinfo is udbinfo:
+                proto = "UDP"
+            else:
+                proto = ""
 
-
+            while inpcb is not None and inpcb.vol.offset != 0:        
+                yield (inpcb.cast("inpcb"),proto)
+                inpcb = inpcb.inp_list.le_next.dereference()
+    
+    def _itoip(self,ip):
+        return '.'.join( [ str((ip >> 8*i) % 256)  for i in range(0,4) ])
 
     def _generator(self):
         """Produces all connections after filtering"""
-        for conn in self.list_conns(
+        for (conn,proto) in self.list_conns(
                 self.context,
                 self.config['primary'],
                 self.config['freebsd'],
                 #TODO: change pid
                 filter = self.create_filter([self.config.get('pid', None)])):
-            proto = 'TEST'
+
             l_host = conn.inp_inc.inc_ie.ie_dependladdr.ie46_local.ia46_addr4.s_addr
             l_port = conn.inp_inc.inc_ie.ie_lport
             r_host = conn.inp_inc.inc_ie.ie_dependfaddr.ie46_foreign.ia46_addr4.s_addr
             r_port = conn.inp_inc.inc_ie.ie_fport
-            yield (0,(proto, l_host, l_port, r_host, r_port))
+            
+            #TODO: Find State information
+            #if proto is "TCP":
+            #    conn.inp_ppcb.cast("")
 
+            yield (0,(proto, self._itoip(l_host), l_port, 
+                             self._itoip(r_host), r_port))
 
     def run(self):
         """Entry point for plugin"""
         #TODO: PPID of processes that own the connection?
         return renderers.TreeGrid(
-                [("PROT", str), ("L_IP", int), ("LPORT", int),
-                    ("R_IP", int),("RPORT", int)], 
+                [("PROT", str), ("L_HOST", str), ("LPORT", int),
+                    ("R_HOST", str),("RPORT", int)], 
                 self._generator())
