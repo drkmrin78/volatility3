@@ -103,17 +103,24 @@ class Net_Conns(interfaces_plugins.PluginInterface):
             r_host = conn.inp_inc.inc_ie.ie_dependfaddr.ie46_foreign.ia46_addr4.s_addr
             r_port = conn.inp_inc.inc_ie.ie_fport
             
-            #TODO: Find State information
-            #if proto is "TCP":
-            #    conn.inp_ppcb.cast("")
+            state = ""
+            #Find State information
+            if proto is "TCP" and conn.inp_socket != 0:
+                sock = conn.inp_socket.dereference()
+                isListening = sock.so_options & 2
+                isConnected = sock.so_state & 2
+                if isConnected > 0:
+                    state = "CONNECTED"
+                elif isListening > 0:
+                    state = "LISTENING"
 
             yield (0,(proto, self._itoip(l_host), l_port, 
-                             self._itoip(r_host), r_port))
+                             self._itoip(r_host), r_port, state))
 
     def run(self):
         """Entry point for plugin"""
         #TODO: PPID of processes that own the connection?
         return renderers.TreeGrid(
                 [("PROT", str), ("L_HOST", str), ("LPORT", int),
-                    ("R_HOST", str),("RPORT", int)], 
+                    ("R_HOST", str),("RPORT", int), ("STATE", str)], 
                 self._generator())
