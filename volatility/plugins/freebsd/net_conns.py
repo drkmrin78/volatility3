@@ -58,8 +58,7 @@ class Net_Conns(interfaces_plugins.PluginInterface):
     def list_conns(cls,
                    context: interfaces.context.ContextInterface,
                    layer_name: str,
-                   freebsd_symbols: str,
-                   filter: Callable[[int],bool] = lambda _:False) \
+                   freebsd_symbols: str)\
                    -> Iterable[interfaces.objects.ObjectInterface]:
         """List all connections in primary layer"""
         view = contexts.Module(context,
@@ -89,19 +88,21 @@ class Net_Conns(interfaces_plugins.PluginInterface):
     def _itoip(self,ip):
         return '.'.join( [ str((ip >> 8*i) % 256)  for i in range(0,4) ])
 
+    def _bigToLittle(self, x, size):
+        return int.from_bytes(((x).to_bytes(size, byteorder='big')), byteorder='little')
+
     def _generator(self):
         """Produces all connections after filtering"""
         for (conn,proto) in self.list_conns(
                 self.context,
                 self.config['primary'],
-                self.config['freebsd'],
-                #TODO: change pid
-                filter = self.create_filter([self.config.get('pid', None)])):
+                self.config['freebsd']):
 
+            #FreeBSD 11.2 
             l_host = conn.inp_inc.inc_ie.ie_dependladdr.ie46_local.ia46_addr4.s_addr
-            l_port = conn.inp_inc.inc_ie.ie_lport
+            l_port = self._bigToLittle(conn.inp_inc.inc_ie.ie_lport,2)
             r_host = conn.inp_inc.inc_ie.ie_dependfaddr.ie46_foreign.ia46_addr4.s_addr
-            r_port = conn.inp_inc.inc_ie.ie_fport
+            r_port = self._bigToLittle(conn.inp_inc.inc_ie.ie_fport, 2)
             
             state = ""
             #Find State information
@@ -119,7 +120,6 @@ class Net_Conns(interfaces_plugins.PluginInterface):
 
     def run(self):
         """Entry point for plugin"""
-        #TODO: PPID of processes that own the connection?
         return renderers.TreeGrid(
                 [("PROT", str), ("L_HOST", str), ("LPORT", int),
                     ("R_HOST", str),("RPORT", int), ("STATE", str)], 
