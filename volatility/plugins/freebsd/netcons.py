@@ -26,8 +26,9 @@ from volatility.framework.automagic import freebsd #FreeBSD automagic not implem
 from volatility.framework.configuration import requirements
 from volatility.framework.objects import utility
 
-class Net_Conns(interfaces_plugins.PluginInterface):
+class NetConns(interfaces_plugins.PluginInterface):
     """Lists the network connections present in a FreeBSD memory image"""
+    
 
     @classmethod
     def get_requirements(cls) -> List[interfaces.configuration.RequirementInterface]:
@@ -40,19 +41,6 @@ class Net_Conns(interfaces_plugins.PluginInterface):
                    name = 'freebsd',
                    description = "FreeBSD kernel Symbols")
             ]
-
-    @classmethod # create_filter should be built in? 
-    def create_filter(cls, f_list: List[int] = None) -> Callable[[int], bool]:
-        # FIXME: mypy #4973 or #2608
-        f_list = f_list or []
-        filter_list = [x for x in f_list if x is not None]
-        if filter_list:
-            def filter_func(x):
-                return x not in filter_list
-
-            return filter_func
-        else:
-            return lambda _: False
 
     @classmethod
     def list_conns(cls,
@@ -79,7 +67,7 @@ class Net_Conns(interfaces_plugins.PluginInterface):
             elif inpcbinfo is udbinfo:
                 proto = "UDP"
             else:
-                proto = ""
+                proto = "RAW"
 
             while inpcb is not None and inpcb.vol.offset != 0:        
                 yield (inpcb.cast("inpcb"),proto)
@@ -90,6 +78,56 @@ class Net_Conns(interfaces_plugins.PluginInterface):
 
     def _bigToLittle(self, x, size):
         return int.from_bytes(((x).to_bytes(size, byteorder='big')), byteorder='little')
+    
+    def _flagsToString(self, bits, pairs):
+        ret = ""
+        for bit,value in pairs.items():
+            if bits & bit > 0:
+                ret += value + ", "
+        return ret[:len(ret)-2]
+
+    def _getSocketOptions(self, socket):
+        options = {
+                    0x1: "DEBUG",
+                    0x2: "ACCEPTCONN",
+                    0x4: "REUSEADDR",
+                    0x8: "KEEPALIVE",
+                   0x10: "DONTROUTE",
+                   0x20: "BROADCAST",
+                   0x40: "USELOOPBACK",
+                   0x80: "LINGER",
+                  0x100: "OOBINLINE",
+                  0x200: "REUSEPORT",
+                  0x400: "TIMESTAMP",
+                  0x800: "NOSIGPIPE",
+                 0x1000: "ACCEPTFILTER",
+                 0x2000: "BINTIME",
+                 0x4000: "NO_OFFLOAD",
+                 0x8000: "NO_DDP",
+                0x10000: "REUSEPORT_LB"
+                }
+        return self._flagsToString(socket.so_options, options)
+    
+    def _getSocketState(self, socket):
+        states = {
+                    0x1: "NOFDREF",
+                    0x2: "ISCONNECTED",
+                    0x4: "ISCONNECTING",
+                    0x8: "ISDISCONNECTING",
+                   0x10: "UNK(0x10)",
+                   0x20: "UNK(0x20)",
+                   0x40: "UNK(0x40)",
+                   0x80: "UNK(0x80)",
+                  0x100: "NBIO",
+                  0x200: "ASYNC",
+                  0x400: "ISCONFIRMING",
+                  0x800: "ISDISCONNECTED",
+                 0x1000: "UNK(0x1000)",
+                 0x2000: "UNK(0x2000)",
+                 0x4000: "UNK(0x2000)"
+                }
+        return self._flagsToString(socket.so_state, states)
+
 
     def _generator(self):
         """Produces all connections after filtering"""
@@ -103,24 +141,22 @@ class Net_Conns(interfaces_plugins.PluginInterface):
             l_port = self._bigToLittle(conn.inp_inc.inc_ie.ie_lport,2)
             r_host = conn.inp_inc.inc_ie.ie_dependfaddr.ie46_foreign.ia46_addr4.s_addr
             r_port = self._bigToLittle(conn.inp_inc.inc_ie.ie_fport, 2)
-            
+           
+            options = ""
             state = ""
             #Find State information
             if proto is "TCP" and conn.inp_socket != 0:
                 sock = conn.inp_socket.dereference()
-                isListening = sock.so_options & 2
-                isConnected = sock.so_state & 2
-                if isConnected > 0:
-                    state = "CONNECTED"
-                elif isListening > 0:
-                    state = "LISTENING"
+                options = self._getSocketOptions(sock);
+                state = self._getSocketState(sock);
 
             yield (0,(proto, self._itoip(l_host), l_port, 
-                             self._itoip(r_host), r_port, state))
+                             self._itoip(r_host), r_port, state, options))
 
     def run(self):
         """Entry point for plugin"""
         return renderers.TreeGrid(
                 [("PROT", str), ("L_HOST", str), ("LPORT", int),
-                    ("R_HOST", str),("RPORT", int), ("STATE", str)], 
+                    ("R_HOST", str),("RPORT", int), 
+                    ("STATE", str), ("OPTIONS", str)], 
                 self._generator())
