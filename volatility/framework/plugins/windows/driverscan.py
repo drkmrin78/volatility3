@@ -18,19 +18,18 @@
 # specific language governing rights and limitations under the License.
 #
 
-import datetime
 from typing import Iterable
 
-import volatility.framework.interfaces.plugins as plugins
-from volatility.framework import renderers, interfaces
-from volatility.framework.configuration import requirements
-from volatility.framework.renderers import format_hints
-from volatility.plugins import timeliner
 import volatility.plugins.windows.poolscanner as poolscanner
 
+import volatility.framework.interfaces.plugins as plugins
+from volatility.framework import renderers, interfaces, exceptions
+from volatility.framework.configuration import requirements
+from volatility.framework.renderers import format_hints
 
-class PsScan(plugins.PluginInterface, timeliner.TimeLinerInterface):
-    """Scans for processes present in a particular windows memory image"""
+
+class DriverScan(plugins.PluginInterface):
+    """Scans for drivers present in a particular windows memory image"""
 
     @classmethod
     def get_requirements(cls):
@@ -41,14 +40,14 @@ class PsScan(plugins.PluginInterface, timeliner.TimeLinerInterface):
         ]
 
     @classmethod
-    def scan_processes(cls,
-                       context: interfaces.context.ContextInterface,
-                       layer_name: str,
-                       symbol_table: str) -> \
+    def scan_drivers(cls,
+                     context: interfaces.context.ContextInterface,
+                     layer_name: str,
+                     symbol_table: str) -> \
             Iterable[interfaces.objects.ObjectInterface]:
-        """Scans for processes using the poolscanner module and constraints"""
+        """Scans for drivers using the poolscanner module and constraints"""
 
-        constraints = poolscanner.PoolScanner.builtin_constraints(symbol_table, [b'Pro\xe3', b'Proc'])
+        constraints = poolscanner.PoolScanner.builtin_constraints(symbol_table, [b'Dri\xf6', b'Driv'])
 
         for result in poolscanner.PoolScanner.generate_pool_scan(context, layer_name, symbol_table, constraints):
 
@@ -56,22 +55,27 @@ class PsScan(plugins.PluginInterface, timeliner.TimeLinerInterface):
             yield mem_object
 
     def _generator(self):
-        for proc in self.scan_processes(self.context, self.config['primary'], self.config['nt_symbols']):
+        for driver in self.scan_drivers(self.context, self.config['primary'], self.config['nt_symbols']):
 
-            yield (0, (proc.UniqueProcessId, proc.InheritedFromUniqueProcessId,
-                       proc.ImageFileName.cast("string", max_length = proc.ImageFileName.vol.count, errors = 'replace'),
-                       format_hints.Hex(proc.vol.offset), proc.ActiveThreads, proc.get_handle_count(),
-                       proc.get_session_id(), proc.get_is_wow64(), proc.get_create_time(), proc.get_exit_time()))
+            try:
+                driver_name = driver.get_driver_name()
+            except exceptions.InvalidAddressException:
+                driver_name = renderers.NotApplicableValue()
 
-    def generate_timeline(self):
-        for row in self._generator():
-            _depth, row_data = row
-            description = "Process: {} ({})".format(row_data[2], row_data[3])
-            yield (description, timeliner.TimeLinerType.CREATED, row_data[8])
-            yield (description, timeliner.TimeLinerType.MODIFIED, row_data[9])
+            try:
+                service_key = driver.DriverExtension.ServiceKeyName.String
+            except exceptions.InvalidAddressException:
+                service_key = renderers.NotApplicableValue()
+
+            try:
+                name = driver.DriverName.String
+            except exceptions.InvalidAddressException:
+                name = renderers.NotApplicableValue()
+
+            yield (0, (format_hints.Hex(driver.vol.offset), format_hints.Hex(driver.DriverStart),
+                       format_hints.Hex(driver.DriverSize), service_key, driver_name, name))
 
     def run(self):
-        return renderers.TreeGrid([("PID", int), ("PPID", int), ("ImageFileName", str), ("Offset", format_hints.Hex),
-                                   ("Threads", int), ("Handles", int), ("SessionId", int), ("Wow64", bool),
-                                   ("CreateTime", datetime.datetime), ("ExitTime", datetime.datetime)],
-                                  self._generator())
+        return renderers.TreeGrid([("Offset", format_hints.Hex),
+                                   ("Start", format_hints.Hex), ("Size", format_hints.Hex), ("Service Key", str),
+                                   ("Driver Name", str), ("Name", str)], self._generator())

@@ -4,9 +4,18 @@ import datetime
 import json
 import re
 import subprocess
+from ruamel import yaml
 from typing import Dict
 
-from ruamel import yaml
+import cxxfilt
+import speg
+
+try:
+    import cppmangle
+
+    CPPMANGLE = True
+except ImportError:
+    CPPMANGLE = False
 
 value_map = {
     'LF_STRUCTURE': 'Class',
@@ -276,7 +285,20 @@ class SymbolConverter:
             record = entry.get('PublicSym32', {})
             if record:
                 name = record['Name']
-                output[name] = {'address': record['Offset']}
+                if CPPMANGLE:
+                    try:
+                        demangled_name = cppmangle.cdecl_sym(cppmangle.demangle(name))
+                    except (speg.ParseError, KeyError, IndexError):
+                        # TODO: report there's been an error demangling names
+                        demangled_name = name
+                    if demangled_name != name:
+                        output[demangled_name] = {'address': record['Offset'], 'linkage_name': name}
+                        print("  - {}".format(demangled_name))
+                    else:
+                        output[name] = {'address': record['Offset']}
+
+                else:
+                    output[name] = {'address': record['Offset']}
         return output
 
     def export_json(self) -> Dict:
@@ -301,6 +323,7 @@ if __name__ == '__main__':
     print("[*] Loading YAML data...")
     ryaml = yaml.YAML()
     yaml.reader.Reader.NON_PRINTABLE = re.compile(u'[^\x09\x0A\x0D\x20-\x7F\x85' u'\xA0-\uD7FF' u'\uE000-\uFFFD' u']')
+    yaml.reader.Reader._printable_ascii = ('\x09\x0A\x0D' + ''.join(map(chr, range(0x20, 0x80)))).encode('ascii')
     data = ryaml.load(file_data)
 
     print("[*] Converting the YAML to JSON...")

@@ -44,17 +44,14 @@ class PsList(interfaces_plugins.PluginInterface):
     @classmethod
     def create_filter(cls, pid_list: List[int] = None) -> Callable[[int], bool]:
 
-        def nullfilter():
-            return False
-
-        filter_func = nullfilter
+        filter_func = lambda _: False
         # FIXME: mypy #4973 or #2608
         pid_list = pid_list or []
         filter_list = [x for x in pid_list if x is not None]
         if filter_list:
 
             def list_filter(x):
-                return x not in filter_list
+                return x.pid not in filter_list
 
             filter_func = list_filter
         return filter_func
@@ -64,7 +61,7 @@ class PsList(interfaces_plugins.PluginInterface):
                 self.context,
                 self.config['primary'],
                 self.config['darwin'],
-                filter = self.create_filter([self.config.get('pid', None)])):
+                filter_func = self.create_filter([self.config.get('pid', None)])):
             pid = task.p_pid
             ppid = task.p_ppid
             name = utility.array_to_string(task.p_comm)
@@ -75,7 +72,7 @@ class PsList(interfaces_plugins.PluginInterface):
                    context: interfaces.context.ContextInterface,
                    layer_name: str,
                    darwin_symbols: str,
-                   filter: Callable[[int], bool] = lambda _: False) -> \
+                   filter_func: Callable[[int], bool] = lambda _: False) -> \
             Iterable[interfaces.objects.ObjectInterface]:
         """Lists all the tasks in the primary layer"""
 
@@ -93,7 +90,8 @@ class PsList(interfaces_plugins.PluginInterface):
             else:
                 seen[proc.vol.offset] = 1
 
-            yield proc
+            if not filter_func(proc):
+                yield proc
 
             proc = proc.p_list.le_next.dereference()
 

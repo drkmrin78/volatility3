@@ -18,19 +18,17 @@
 # specific language governing rights and limitations under the License.
 #
 
-import datetime
 from typing import Iterable
-
+import datetime
 import volatility.framework.interfaces.plugins as plugins
-from volatility.framework import renderers, interfaces
+from volatility.framework import renderers, interfaces, exceptions
 from volatility.framework.configuration import requirements
 from volatility.framework.renderers import format_hints
-from volatility.plugins import timeliner
 import volatility.plugins.windows.poolscanner as poolscanner
+from volatility.plugins import timeliner
 
-
-class PsScan(plugins.PluginInterface, timeliner.TimeLinerInterface):
-    """Scans for processes present in a particular windows memory image"""
+class SymlinkScan(plugins.PluginInterface, timeliner.TimeLinerInterface):
+    """Scans for links present in a particular windows memory image"""
 
     @classmethod
     def get_requirements(cls):
@@ -41,14 +39,14 @@ class PsScan(plugins.PluginInterface, timeliner.TimeLinerInterface):
         ]
 
     @classmethod
-    def scan_processes(cls,
-                       context: interfaces.context.ContextInterface,
-                       layer_name: str,
-                       symbol_table: str) -> \
+    def scan_symlinks(cls,
+                     context: interfaces.context.ContextInterface,
+                     layer_name: str,
+                     symbol_table: str) -> \
             Iterable[interfaces.objects.ObjectInterface]:
-        """Scans for processes using the poolscanner module and constraints"""
+        """Scans for links using the poolscanner module and constraints"""
 
-        constraints = poolscanner.PoolScanner.builtin_constraints(symbol_table, [b'Pro\xe3', b'Proc'])
+        constraints = poolscanner.PoolScanner.builtin_constraints(symbol_table, [b'Sym\xe2', b'Symb'])
 
         for result in poolscanner.PoolScanner.generate_pool_scan(context, layer_name, symbol_table, constraints):
 
@@ -56,22 +54,30 @@ class PsScan(plugins.PluginInterface, timeliner.TimeLinerInterface):
             yield mem_object
 
     def _generator(self):
-        for proc in self.scan_processes(self.context, self.config['primary'], self.config['nt_symbols']):
+        for link in self.scan_symlinks(self.context, self.config['primary'], self.config['nt_symbols']):
 
-            yield (0, (proc.UniqueProcessId, proc.InheritedFromUniqueProcessId,
-                       proc.ImageFileName.cast("string", max_length = proc.ImageFileName.vol.count, errors = 'replace'),
-                       format_hints.Hex(proc.vol.offset), proc.ActiveThreads, proc.get_handle_count(),
-                       proc.get_session_id(), proc.get_is_wow64(), proc.get_create_time(), proc.get_exit_time()))
+            try:
+                from_name = link.get_link_name()
+            except exceptions.InvalidAddressException:
+                continue
+
+            try:
+                to_name = link.LinkTarget.String
+            except exceptions.InvalidAddressException:
+                continue
+
+            yield (0, (format_hints.Hex(link.vol.offset), link.get_create_time(), from_name, to_name))
 
     def generate_timeline(self):
         for row in self._generator():
             _depth, row_data = row
-            description = "Process: {} ({})".format(row_data[2], row_data[3])
-            yield (description, timeliner.TimeLinerType.CREATED, row_data[8])
-            yield (description, timeliner.TimeLinerType.MODIFIED, row_data[9])
+            description = "Symlink: {} -> {}".format(row_data[2], row_data[3])
+            yield (description, timeliner.TimeLinerType.CREATED, row_data[1])
 
     def run(self):
-        return renderers.TreeGrid([("PID", int), ("PPID", int), ("ImageFileName", str), ("Offset", format_hints.Hex),
-                                   ("Threads", int), ("Handles", int), ("SessionId", int), ("Wow64", bool),
-                                   ("CreateTime", datetime.datetime), ("ExitTime", datetime.datetime)],
-                                  self._generator())
+        return renderers.TreeGrid([
+            ("Offset", format_hints.Hex),
+            ("CreateTime", datetime.datetime),
+            ("From Name", str),
+            ("To Name", str),
+        ], self._generator())
