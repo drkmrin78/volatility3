@@ -18,3 +18,33 @@
 # specific language governing rights and limitations under the License.
 #
 """Volatility 3 - An open-source memory forensics framework"""
+import sys
+from importlib import abc
+
+
+class WarningFindSpec(abc.MetaPathFinder):
+    """Checks import attempts and throws a warning if the name shouldn't be used"""
+
+    def find_spec(name: str, _p, _t):
+        """Mock find_spec method that just checks the name, this must go first"""
+        if name.startswith("volatility.framework.plugins."):
+            raise Warning("Please do not use the volatility.framework.plugins namespace, only use volatility.plugins")
+
+
+if WarningFindSpec not in sys.meta_path:
+    sys.meta_path = [WarningFindSpec] + sys.meta_path
+
+# We point the volatility.plugins __path__ variable at BOTH
+#   volatility/plugins
+#   volatility/framework/plugins
+# in that order.
+#
+# This will allow our users to override any component of any plugin without monkey patching,
+# but it also allows us to clear out the plugins directory to get back to proper functionality.
+# This offered the greatest flexibility for users whilst allowing us to keep the core separate and clean.
+#
+# This means that all plugins should be imported as volatility.plugins (otherwise they'll be imported twice,
+# once as volatility.plugins.NAME and once as volatility.framework.plugins.NAME).  We therefore throw an error
+# if anyone tries to import anything under the volatility.framework.plugins.* namespace
+#
+# The remediation is to only ever import form volatility.plugins instead.

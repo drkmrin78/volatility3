@@ -19,16 +19,16 @@
 #
 
 from typing import Iterable
-
+import datetime
 import volatility.framework.interfaces.plugins as plugins
 from volatility.framework import renderers, interfaces, exceptions
 from volatility.framework.configuration import requirements
 from volatility.framework.renderers import format_hints
 import volatility.plugins.windows.poolscanner as poolscanner
+from volatility.plugins import timeliner
 
-
-class MutantScan(plugins.PluginInterface):
-    """Scans for mutexes present in a particular windows memory image"""
+class SymlinkScan(plugins.PluginInterface, timeliner.TimeLinerInterface):
+    """Scans for links present in a particular windows memory image"""
 
     @classmethod
     def get_requirements(cls):
@@ -39,14 +39,14 @@ class MutantScan(plugins.PluginInterface):
         ]
 
     @classmethod
-    def scan_mutants(cls,
+    def scan_symlinks(cls,
                      context: interfaces.context.ContextInterface,
                      layer_name: str,
                      symbol_table: str) -> \
             Iterable[interfaces.objects.ObjectInterface]:
-        """Scans for mutants using the poolscanner module and constraints"""
+        """Scans for links using the poolscanner module and constraints"""
 
-        constraints = poolscanner.PoolScanner.builtin_constraints(symbol_table, [b'Mut\xe1', b'Muta'])
+        constraints = poolscanner.PoolScanner.builtin_constraints(symbol_table, [b'Sym\xe2', b'Symb'])
 
         for result in poolscanner.PoolScanner.generate_pool_scan(context, layer_name, symbol_table, constraints):
 
@@ -54,17 +54,30 @@ class MutantScan(plugins.PluginInterface):
             yield mem_object
 
     def _generator(self):
-        for mutant in self.scan_mutants(self.context, self.config['primary'], self.config['nt_symbols']):
+        for link in self.scan_symlinks(self.context, self.config['primary'], self.config['nt_symbols']):
 
             try:
-                name = mutant.get_name()
+                from_name = link.get_link_name()
             except exceptions.InvalidAddressException:
-                name = renderers.NotApplicableValue()
+                continue
 
-            yield (0, (format_hints.Hex(mutant.vol.offset), name))
+            try:
+                to_name = link.LinkTarget.String
+            except exceptions.InvalidAddressException:
+                continue
+
+            yield (0, (format_hints.Hex(link.vol.offset), link.get_create_time(), from_name, to_name))
+
+    def generate_timeline(self):
+        for row in self._generator():
+            _depth, row_data = row
+            description = "Symlink: {} -> {}".format(row_data[2], row_data[3])
+            yield (description, timeliner.TimeLinerType.CREATED, row_data[1])
 
     def run(self):
         return renderers.TreeGrid([
             ("Offset", format_hints.Hex),
-            ("Name", str),
+            ("CreateTime", datetime.datetime),
+            ("From Name", str),
+            ("To Name", str),
         ], self._generator())

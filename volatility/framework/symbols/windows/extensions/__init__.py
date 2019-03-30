@@ -70,7 +70,10 @@ class _POOL_HEADER(objects.Struct):
 
         # otherwise we have an executive object in the pool
         else:
-            alignment = pool_header_size
+            if symbols.symbol_table_is_64bit(self._context, symbol_table_name):
+                alignment = 16
+            else:
+                alignment = 8
 
             # FIXME: calculate and cache this
             max_optional_headers_length = 0x60
@@ -437,6 +440,33 @@ class _DEVICE_OBJECT(objects.Struct, ExecutiveObject):
         return header.NameInfo.Name.String  # type: ignore
 
 
+class _DRIVER_OBJECT(objects.Struct, ExecutiveObject):
+    """A class for kernel driver objects."""
+
+    def get_driver_name(self) -> str:
+        header = self.object_header()
+        return header.NameInfo.Name.String  # type: ignore
+
+    def is_valid(self) -> bool:
+        """Determine if the object is valid"""
+        return True
+
+
+class _OBJECT_SYMBOLIC_LINK(objects.Struct, ExecutiveObject):
+    """A class for kernel link objects."""
+
+    def get_link_name(self) -> str:
+        header = self.object_header()
+        return header.NameInfo.Name.String  # type: ignore
+
+    def is_valid(self) -> bool:
+        """Determine if the object is valid"""
+        return True
+
+    def get_create_time(self):
+        return conversion.wintime_to_datetime(self.CreationTime.QuadPart)
+
+
 class _FILE_OBJECT(objects.Struct, ExecutiveObject):
     """A class for windows file objects"""
 
@@ -457,6 +487,7 @@ class _FILE_OBJECT(objects.Struct, ExecutiveObject):
 
         return name
 
+
 class _KMUTANT(objects.Struct, ExecutiveObject):
     """A class for windows mutant objects"""
 
@@ -468,6 +499,7 @@ class _KMUTANT(objects.Struct, ExecutiveObject):
         """Get the object's name from the object header"""
         header = self.object_header()
         return header.NameInfo.Name.String  # type: ignore
+
 
 class _OBJECT_HEADER(objects.Struct):
     """A class for the headers for executive kernel objects, which contains
@@ -500,7 +532,7 @@ class _OBJECT_HEADER(objects.Struct):
             # further encodes the index value with nt1!ObHeaderCookie
             try:
                 type_index = ((self.vol.offset >> 8) ^ cookie ^ self.TypeIndex) & 0xFF
-            except AttributeError:
+            except (AttributeError, TypeError):
                 type_index = self.TypeIndex
 
             return type_map.get(type_index)
@@ -661,12 +693,11 @@ class _EPROCESS(generic.GenericIntelProcess, ExecutiveObject):
                 if self.Session == 0:
                     return renderers.NotApplicableValue()
 
-                layer_name = self.vol.layer_name
                 symbol_table_name = self.get_symbol_table().name
-                kvo = self._context.memory[layer_name].config['kernel_virtual_offset']
+                kvo = self._context.memory[self.vol.native_layer_name].config['kernel_virtual_offset']
                 ntkrnlmp = self._context.module(
                     symbol_table_name,
-                    layer_name = layer_name,
+                    layer_name = self.vol.native_layer_name,
                     offset = kvo,
                     native_layer_name = self.vol.native_layer_name)
                 session = ntkrnlmp.object(type_name = "_MM_SESSION_SPACE", offset = self.Session)

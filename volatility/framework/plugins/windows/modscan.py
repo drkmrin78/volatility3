@@ -20,15 +20,16 @@
 
 from typing import Iterable
 
+import volatility.plugins.windows.poolscanner as poolscanner
+
 import volatility.framework.interfaces.plugins as plugins
 from volatility.framework import renderers, interfaces, exceptions
 from volatility.framework.configuration import requirements
 from volatility.framework.renderers import format_hints
-import volatility.plugins.windows.poolscanner as poolscanner
 
 
-class MutantScan(plugins.PluginInterface):
-    """Scans for mutexes present in a particular windows memory image"""
+class ModScan(plugins.PluginInterface):
+    """Scans for modules present in a particular windows memory image"""
 
     @classmethod
     def get_requirements(cls):
@@ -39,14 +40,14 @@ class MutantScan(plugins.PluginInterface):
         ]
 
     @classmethod
-    def scan_mutants(cls,
+    def scan_modules(cls,
                      context: interfaces.context.ContextInterface,
                      layer_name: str,
                      symbol_table: str) -> \
             Iterable[interfaces.objects.ObjectInterface]:
-        """Scans for mutants using the poolscanner module and constraints"""
+        """Scans for modules using the poolscanner module and constraints"""
 
-        constraints = poolscanner.PoolScanner.builtin_constraints(symbol_table, [b'Mut\xe1', b'Muta'])
+        constraints = poolscanner.PoolScanner.builtin_constraints(symbol_table, [b'MmLd'])
 
         for result in poolscanner.PoolScanner.generate_pool_scan(context, layer_name, symbol_table, constraints):
 
@@ -54,17 +55,26 @@ class MutantScan(plugins.PluginInterface):
             yield mem_object
 
     def _generator(self):
-        for mutant in self.scan_mutants(self.context, self.config['primary'], self.config['nt_symbols']):
+        for mod in self.scan_modules(self.context, self.config['primary'], self.config['nt_symbols']):
 
             try:
-                name = mutant.get_name()
+                BaseDllName = mod.BaseDllName.get_string()
             except exceptions.InvalidAddressException:
-                name = renderers.NotApplicableValue()
+                BaseDllName = ""
 
-            yield (0, (format_hints.Hex(mutant.vol.offset), name))
+            try:
+                FullDllName = mod.FullDllName.get_string()
+            except exceptions.InvalidAddressException:
+                FullDllName = ""
+
+            yield (0, (
+                format_hints.Hex(mod.vol.offset),
+                format_hints.Hex(mod.DllBase),
+                format_hints.Hex(mod.SizeOfImage),
+                BaseDllName,
+                FullDllName,
+            ))
 
     def run(self):
-        return renderers.TreeGrid([
-            ("Offset", format_hints.Hex),
-            ("Name", str),
-        ], self._generator())
+        return renderers.TreeGrid([("Offset", format_hints.Hex), ("Base", format_hints.Hex), ("Size", format_hints.Hex),
+                                   ("Name", str), ("Path", str)], self._generator())
