@@ -112,7 +112,6 @@ class QuickTextRenderer(interfaces.renderers.Renderer):
         interfaces.renderers.Disassembly: Optional(display_disassembly),
         bytes: Optional(lambda x: " ".join(["{0:2x}".format(b) for b in x])),
         datetime.datetime: Optional(lambda x: x.strftime("%Y-%m-%d %H:%M:%S.%f %Z")),
-        tuple: Optional(lambda xy: "{{0: <{}}}".format(xy[1]).format(xy[0])),
         'default': Optional(lambda x: "{}".format(x))
     }
 
