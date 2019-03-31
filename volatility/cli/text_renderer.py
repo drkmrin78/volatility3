@@ -21,7 +21,7 @@
 import datetime
 import logging
 import sys
-from typing import Callable, Any, Tuple
+from typing import Callable, Any
 
 from volatility.framework.renderers import format_hints
 
