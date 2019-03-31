@@ -133,7 +133,7 @@ class TreeGrid(object, metaclass = ABCMeta):
     and to create cycles.
     """
 
-    base_types = (int, str, float, bytes, datetime.datetime, Disassembly)  # type: ClassVar[Tuple]
+    base_types = (int, str, float, bytes, tuple, datetime.datetime, Disassembly)  # type: ClassVar[Tuple]
 
     def __init__(self, columns: ColumnsType, generator: Generator) -> None:
         """Constructs a TreeGrid object using a specific set of columns
