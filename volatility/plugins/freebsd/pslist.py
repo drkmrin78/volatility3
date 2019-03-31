@@ -18,7 +18,7 @@
 # specific language governing rights and limitations under the License.
 #
 
-from typing import Callable, Iterable, List, Tuple
+from typing import Callable, Iterable, List
 
 import volatility.framework.interfaces.plugins as interfaces_plugins
 from volatility.framework import renderers, interfaces, contexts
@@ -102,9 +102,8 @@ class PsList(interfaces_plugins.PluginInterface):
                 ppid = 0
             
             name = utility.array_to_string(task.p_comm)
-            yield (0, ((pid, 5), (ppid, 5), (name, 20)))
+            yield (0, (pid, ppid, name))
 
     def run(self):
         """Entry point for plugin"""
-        return renderers.TreeGrid([("PID", tuple), ("PPID", tuple), 
-                                    ("COMM", tuple)], self._generator())
+        return renderers.TreeGrid([("PID", int), ("PPID", int), ("COMM", str)], self._generator())
